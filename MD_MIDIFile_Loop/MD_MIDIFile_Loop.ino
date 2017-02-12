@@ -4,9 +4,16 @@
 // Hardware required:
 //	SD card interface - change SD_SELECT for SPI comms
 
+#include <avr/pgmspace.h>
+
 #include <SPI.h>
 #include <SdFat.h> 
 #include <MD_MIDIFile.h>
+
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+
+#include "FSMtypes.h"    // FSM enumerated types
 
 #define	USE_MIDI	1
 #define SERIAL_RATE 56700
@@ -34,31 +41,48 @@
 // Other hardware will be different as documented for that hardware.
 #define  SD_SELECT  4
 
-#define	ARRAY_SIZE(a)	(sizeof(a)/sizeof(a[0]))
+// LCD display defines ---------
+#define  LCD_ROWS  2
+#define  LCD_COLS  16
 
-// The files in the tune list should be located on the SD card 
-// or an error will occur opening the file and the next in the 
-// list will be opened (skips errors).
-char *loopfile = "Ghostbusters.mid";  
+// LCD user defined characters
+//#define  PAUSE   '\1'
+/*
+const PROGMEM uint8_t cPause[] = 
+{
+    0b10010,
+    0b10010,
+    0b10010,
+    0b10010,
+    0b10010,
+    0b10010,
+    0b10010,
+    0b00000
+};
+*/
+
+// input buttons
+int NBUTTONS = 4;
+const PROGMEM int buttons[4] = {6,7,8,9}; // pins for buttons
+const char ButtonMsg[] PROGMEM  = {'L','S','P','R'};
+
+// Playlist handling -----------
+#define  FNAME_SIZE    13        // 8.3 + '\0' character file names
+#define PLAYLIST_FILE "PL.txt"   // file of file names
+#define MIDI_EXT    ".mid"      // MIDI file extension
+uint16_t  plCount = 0;
 
 SdFat	SD;
 MD_MIDIFile SMF;
+
+LiquidCrystal_I2C LCD(0x3F, LCD_COLS, LCD_ROWS);   
 
 void midiCallback(midi_event *pev)
 // Called by the MIDIFile library when a file event needs to be processed
 // thru the midi communications interface.
 // This callback is set up in the setup() function.
 {
-
-      /**
-     * The periods for each MIDI note in an array.  The floppy drives
-     * don't really do well outside of the defined range, so skip those notes.
-     * Periods are in microseconds because that's what the Arduino uses for its
-     * clock-cycles in the micro() function, and because milliseconds aren't
-     * precise enough for musical notes.
-     * 
-     * Notes are named (e.g. C1-B4) based on scientific pitch notation (A4=440Hz) 
-     */
+  
    int microPeriods[128] = {
         30578, 28861, 27242, 25713, 24270, 22909, 21622, 20409, 19263, 18182, 17161, 16198, //C1 - B1
         15289, 14436, 13621, 12856, 12135, 11454, 10811, 10205, 9632, 9091, 8581, 8099, //C2 - B2
@@ -66,20 +90,17 @@ void midiCallback(midi_event *pev)
         3823, 3609, 3406, 3214, 3034, 2864, 2703, 2552, 2408, 2273, 2146, 2025 //C4 - B4
     };
     
-    /**
-     * Maximum number of cents to bend +/-.
-     */
+    
+    // Maximum number of cents to bend +/-.
     int BEND_CENTS = 200;
     
-    /**
-     * Resolution of the Arduino code in microSeconds.
-     */
+    
+    // Resolution of the Arduino code in microSeconds.
     int ARDUINO_RESOLUTION = 40;
     
-    /**
-     * Current period of each MIDI channel (zero is off) as set 
-     * by the NOTE ON message; for pitch-bending.
-     */
+    
+    // Current period of each MIDI channel (zero is off) as set 
+    // by the NOTE ON message; for pitch-bending.
     int currentPeriod[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; 
     byte pin;
     int period;
@@ -141,7 +162,33 @@ void midiCallback(midi_event *pev)
                 sendEvent(pin, period);
             }
         }
+        
 }
+
+/*
+void midiCallback(midi_event *pev)
+// Called by the MIDIFile library when a file event needs to be processed
+// thru the midi communications interface.
+// This callback is set up in the setup() function.
+{
+#if USE_MIDI
+  if ((pev->data[0] >= 0x80) && (pev->data[0] <= 0xe0))
+  {
+    Serial.write(pev->data[0] | pev->channel);
+    Serial.write(&pev->data[1], pev->size-1);
+  }
+  else
+    Serial.write(pev->data, pev->size);
+#endif
+  DEBUG("\nM T", pev->track);
+  DEBUG(":  Ch ", pev->channel+1);
+  DEBUGS(" Data");
+  for (uint8_t i=0; i<pev->size; i++)
+  {
+    DEBUGX(" ", pev->data[i]);
+  }
+}
+*/
 
 void sendEvent(byte pin, int periodData) {
   byte startMarker = 0x3C;
@@ -153,39 +200,327 @@ void sendEvent(byte pin, int periodData) {
     Serial.write(endMarker);
   #endif
   
-  DEBUG("\n## Writing to serial: byte 1: ", pin);
-  DEBUG(", byte 2: ", (byte)periodData);
+  //DEBUG("\n## Writing to serial: byte 1: ", pin);
+  //DEBUG(", byte 2: ", (byte)periodData);
   
 }
 
-void setup(void)
+char getButton() {
+  for(int i=0;i<NBUTTONS;++i) {
+    if (digitalRead(pgm_read_word_near(buttons+i)) == HIGH) {
+      char button = pgm_read_word_near(ButtonMsg+i);
+      DEBUG("\n#### Pressed button ", button);
+      delay(300);
+      return button;
+    }
+  }
+}
+
+//---------------------------
+
+
+void midiSilence(void)
+// Turn everything off on every channel.
+// Some midi files are badly behaved and leave notes hanging, so between songs turn
+// off all the notes and sound
 {
-  int  err;
+  midi_event  ev;
 
-  Serial.begin(SERIAL_RATE);
+  // All sound off
+  // When All Sound Off is received all oscillators will turn off, and their volume
+  // envelopes are set to zero as soon as possible.
+  ev.size = 0;
+  ev.data[ev.size++] = 0xb0;
+  ev.data[ev.size++] = 120;
+  ev.data[ev.size++] = 0;
 
-  DEBUGS("\n[MidiFile Looper]");
+  for (ev.channel = 0; ev.channel < 16; ev.channel++)
+    midiCallback(&ev);
+}
 
-  // Initialize SD
-  if (!SD.begin(SD_SELECT, SPI_FULL_SPEED))
+
+// LCD Message Helper functions -----------------
+void LCDMessage(uint8_t r, uint8_t c, const char *msg, bool clrEol = false)
+// Display a message on the LCD screen with optional spaces padding the end
+{
+  LCD.setCursor(c, r);
+  LCD.print(msg);
+  if (clrEol)
   {
-    DEBUGS("\nSD init fail!");
-    while (true) ;
+    c += strlen(msg);
+    while (c++ < LCD_COLS)
+      LCD.write(' ');
+  }
+}
+
+void LCDErrMessage(const char *msg, bool fStop)
+{
+  LCDMessage(1, 0, msg, true);
+  DEBUGS(F("\nLCDErr: "));
+  DEBUGS(msg);
+  while (fStop) ;   // stop here if told to
+  delay(2000);    // if not stop, pause to show message
+}
+
+
+// Create list of files for menu --------------
+
+uint16_t createPlaylistFile(void)
+// create a play list file on the SD card with the names of the files.
+// This will then be used in the menu.
+{
+  SdFile    plFile;   // play list file
+  SdFile    mFile;    // MIDI file
+  uint16_t  count = 0;// count of files
+  char      fname[FNAME_SIZE];
+
+  // open/create the play list file
+  //LCDErrMessage("Creating playlist", false); //*
+  if (!plFile.open(PLAYLIST_FILE, O_RDWR | O_CREAT | O_AT_END)) {
+    LCDErrMessage("PL create fail", true);
   }
 
-  // Initialize MIDIFile
+  //LCDErrMessage("playlist created", false); //*
+  SD.vwd()->rewind();
+  while (mFile.openNext(SD.vwd(), O_READ))
+  {
+    mFile.getName(fname,FNAME_SIZE);
+
+    DEBUGS(F("\nFile "));
+    DEBUGS(count);
+    DEBUGS(F(" "));
+    DEBUGS(fname);
+
+    if (mFile.isFile())
+    {
+      if (strcmp(MIDI_EXT, &fname[strlen(fname)-strlen(MIDI_EXT)]) == 0)
+      // only include files with MIDI extension
+      {
+        plFile.write(fname, FNAME_SIZE);
+        count++;
+      }
+    }
+    mFile.close();
+  }
+  DEBUGS(F("\nList completed"));
+
+  // close the play list file
+  plFile.close();
+
+  return(count);
+}
+
+// FINITE STATE MACHINES -----------------------------
+
+seq_state lcdFSM(seq_state curSS)
+// Handle selecting a file name from the list (user input)
+{
+  static lcd_state s = LSBegin;
+  static uint8_t  plIndex = 0;
+  static char fname[FNAME_SIZE];
+  static SdFile plFile;   // play list file
+
+  // LCD state machine
+  switch (s)
+  {
+  case LSBegin:
+    LCDMessage(0, 0, "Select music:", true);
+    if (!plFile.isOpen())
+    {
+      if (!plFile.open(PLAYLIST_FILE, O_READ))
+        LCDErrMessage("PL file not open", true);
+    }
+    s = LSShowFile;
+    break;
+
+  case LSShowFile:
+    plFile.seekSet(FNAME_SIZE*plIndex);
+    plFile.read(fname, FNAME_SIZE);
+
+    LCDMessage(1, 0, fname, true);
+    LCD.setCursor(LCD_COLS-2, 1);
+    LCD.print(plIndex == 0 ? ' ' : '<');
+    LCD.print(plIndex == plCount-1 ? ' ' : '>');
+    s = LSSelect;
+    break;
+
+  case LSSelect:
+    switch (getButton())
+    // Keys are mapped as follows:
+    // 'L':  use the previous file name (move back one file name)
+    // 'S':  move to the first file name
+    // 'P':  move on to the next state in the state machine
+    // 'R':  use the next file name (move forward one file name)
+
+    {
+      
+      case 'L': // Left
+        if (plIndex != 0) 
+          plIndex--;
+        s = LSShowFile;
+        break;
+
+        case 'S': // Stop
+        plIndex = 0;
+        s = LSShowFile;
+        break;
+
+        case 'P': // Play
+        s = LSGotFile;
+        break;
+
+      case 'R': // Right
+        if (plIndex != plCount-1) 
+          plIndex++;
+        s = LSShowFile;
+        break;
+
+        
+    }
+    break;
+
+  case LSGotFile:
+    // copy the file name and switch mode to playing MIDI
+    SMF.setFilename(fname);
+    curSS = MIDISeq;
+    // fall through to default state
+
+  default:
+    s = LSBegin;
+    break;
+  }  
+
+  return(curSS);
+}
+
+seq_state midiFSM(seq_state curSS)
+// Handle playing the selected MIDI file
+{
+  static midi_state s = MSBegin;
+  
+  switch (s)
+  {
+  case MSBegin:
+    // Set up the LCD 
+    LCDMessage(0, 0, SMF.getFilename(), true);
+    LCDMessage(1, 0, "playing ...", true);   // string of user defined characters
+    s = MSLoad;
+    break;
+
+  case MSLoad:
+    // Load the current file in preparation for playing
+    {
+      int  err;
+
+      // Attempt to load the file
+      if ((err = SMF.load()) == -1)
+      {
+        s = MSProcess;
+      }
+      else
+      {
+        char  aErr[16];
+
+        sprintf(aErr, "SMF error %03d", err);
+        LCDErrMessage(aErr, false);
+        s = MSClose;
+      }
+    }
+    break;
+
+  case MSProcess:
+    // Play the MIDI file
+    if (!SMF.isEOF())
+    {
+      SMF.getNextEvent();
+      /*
+      if (SMF.getNextEvent())
+      {
+        char  sBuf[10];
+        
+        sprintf(sBuf, "%3d", SMF.getTempo());
+        LCDMessage(0, LCD_COLS-strlen(sBuf), sBuf, true);
+        sprintf(sBuf, "%d/%d", SMF.getTimeSignature()>>8, SMF.getTimeSignature() & 0xf);
+        LCDMessage(1, LCD_COLS-strlen(sBuf), sBuf, true);
+      }
+      */
+    }    
+    else {
+      s = MSClose;
+    }
+
+    // check the keys
+    switch (getButton())
+    {
+      case 'L': SMF.restart();    break;  // Rewind
+      case 'S': s = MSClose;      break;  // Stop
+      case 'P':                   break;  // Nothing assigned to this key
+      case 'R':                   break;  // Nothing assigned to this key
+    }
+
+    break;
+
+  case MSClose:
+    // close the file and switch mode to user input
+    SMF.close();
+    midiSilence();
+    curSS = LCDSeq;
+    // fall through to default state
+
+  default:
+    s = MSBegin;
+    break;
+  }
+
+  return(curSS);
+}
+
+//---------------------------
+
+
+void setup(void)
+{
+
+  int  err;
+
+  // initialise MIDI output stream
+  Serial.begin(SERIAL_RATE);
+
+  // initialise LCD display
+  //LCD.begin(LCD_COLS, LCD_ROWS);
+  LCD.init();
+  LCD.backlight();
+  LCD.clear();
+  LCD.noCursor();
+  //LCDMessage(0, 0, "  Midi  Player  ", false);
+  //LCDMessage(1, 0, "  ------------  ", false);
+
+  // Load characters to the LCD
+  //LCD.createChar(PAUSE, pgm_read_word_near(cPause));
+
+  // setup input pins for buttons
+  for(int i=0;i<NBUTTONS;++i) {
+    pinMode(buttons[i], INPUT); 
+  } 
+
+  // initialise SDFat
+  //LCDErrMessage("Init SDCard", false); //*
+  if (!SD.begin(SD_SELECT, SPI_FULL_SPEED)) {
+    LCDErrMessage("SD init fail!", true);
+  }
+  
+  plCount = createPlaylistFile();
+  if (plCount == 0) {
+    LCDErrMessage("No files", true);
+  }
+  
+  // initialise MIDIFile
+  
   SMF.begin(&SD);
   SMF.setMidiHandler(midiCallback);
-  SMF.looping(true);
-
-  // use the next file name and play it
-  DEBUG("\nFile: ", loopfile);
-  SMF.setFilename(loopfile);
-  err = SMF.load();
-  //SMF.setTempoAdjust(-40);
-  //SMF.setTempo(120);
   
-  // Set only 16 ticks per quarter note in order to keep up (!)
+  // Set only 16 ticks per quarter note!!!
+  // Otherwise the main loop cannot keep up with the midifile
   SMF.setTicksPerQuarterNote(16); 
 
   // For comparing tick time to loop time
@@ -196,25 +531,24 @@ void setup(void)
   Serial.println("\n##################"); 
   */
 
-  if (err != -1)
-  {
-    DEBUG("\nSMF load Error ", err);
-    while (true);
-  }
+  delay(750);   // allow the welcome to be read on the LCD
+
 }
 
 void loop(void)
+// only need to look after 2 things - the user interface (LCD_FSM) 
+// and the MIDI playing (MIDI_FSM). While playing we have a different 
+// mode from choosing the file, so the FSM will run alternately, depending 
+// on which state we are currently in.
 {
-	// play the file
-	if (!SMF.isEOF())
-	{
-    // For comparing tick time to loop time
-    /*
-    Serial.print("\n#### Loop Time: "); 
-    Serial.println(micros()-lastlooptime);
-    lastlooptime = micros();
-    */
-    
-		SMF.getNextEvent();
-	}
+
+  static seq_state  s = LCDSeq;
+
+  switch (s)
+  {
+    case LCDSeq:  s = lcdFSM(s);  break;
+    case MIDISeq: s = midiFSM(s); break;
+    default: s = LCDSeq;
+  }
+  
 }
