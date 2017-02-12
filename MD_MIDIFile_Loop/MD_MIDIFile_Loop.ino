@@ -45,21 +45,18 @@
 #define  LCD_ROWS  2
 #define  LCD_COLS  16
 
-// LCD user defined characters
-//#define  PAUSE   '\1'
-/*
-const PROGMEM uint8_t cPause[] = 
-{
-    0b10010,
-    0b10010,
-    0b10010,
-    0b10010,
-    0b10010,
-    0b10010,
-    0b10010,
-    0b00000
-};
-*/
+
+// LCD messages
+const char string_0[] PROGMEM = "----- Mo's -----"; 
+const char string_1[] PROGMEM = "-Floppy Jukebox-";
+const char string_2[] PROGMEM = "PL create fail!";   
+const char string_3[] PROGMEM = "Select music:";
+const char string_4[] PROGMEM = "PL file not open";
+const char string_5[] PROGMEM = "playing ...";
+const char string_6[] PROGMEM = "SD init fail!";
+const char string_7[] PROGMEM = "No files!";
+const char* const string_table[] PROGMEM = {string_0, string_1, string_2, string_3, string_4, string_5, string_6, string_7};
+char message[16];    // make sure this is large enough for the largest string it must hold
 
 // input buttons
 int NBUTTONS = 4;
@@ -72,10 +69,12 @@ const char ButtonMsg[] PROGMEM  = {'L','S','P','R'};
 #define MIDI_EXT    ".mid"      // MIDI file extension
 uint16_t  plCount = 0;
 
+
 SdFat	SD;
 MD_MIDIFile SMF;
 
 LiquidCrystal_I2C LCD(0x3F, LCD_COLS, LCD_ROWS);   
+
 
 void midiCallback(midi_event *pev)
 // Called by the MIDIFile library when a file event needs to be processed
@@ -277,7 +276,8 @@ uint16_t createPlaylistFile(void)
   // open/create the play list file
   //LCDErrMessage("Creating playlist", false); //*
   if (!plFile.open(PLAYLIST_FILE, O_RDWR | O_CREAT | O_AT_END)) {
-    LCDErrMessage("PL create fail", true);
+    strcpy_P(message, (char*)pgm_read_word(&(string_table[2]))); // Necessary casts and dereferencing, just copy.
+    LCDErrMessage(message, true);
   }
 
   //LCDErrMessage("playlist created", false); //*
@@ -324,11 +324,15 @@ seq_state lcdFSM(seq_state curSS)
   switch (s)
   {
   case LSBegin:
-    LCDMessage(0, 0, "Select music:", true);
+    strcpy_P(message, (char*)pgm_read_word(&(string_table[3]))); // Necessary casts and dereferencing, just copy.
+    LCDMessage(0, 0, message, true);
     if (!plFile.isOpen())
     {
-      if (!plFile.open(PLAYLIST_FILE, O_READ))
-        LCDErrMessage("PL file not open", true);
+      if (!plFile.open(PLAYLIST_FILE, O_READ)) {
+        //char message2[16];
+        strcpy_P(message, (char*)pgm_read_word(&(string_table[4]))); // Necessary casts and dereferencing, just copy.
+        LCDErrMessage(message, true);
+      }
     }
     s = LSShowFile;
     break;
@@ -403,7 +407,9 @@ seq_state midiFSM(seq_state curSS)
   case MSBegin:
     // Set up the LCD 
     LCDMessage(0, 0, SMF.getFilename(), true);
-    LCDMessage(1, 0, "playing ...", true);   // string of user defined characters
+    strcpy_P(message, (char*)pgm_read_word(&(string_table[5]))); // Necessary casts and dereferencing, just copy.
+    LCDMessage(1, 0, message, true);   // string of user defined characters
+    sendEvent((byte)100,100); // reset pins
     s = MSLoad;
     break;
 
@@ -432,18 +438,7 @@ seq_state midiFSM(seq_state curSS)
     // Play the MIDI file
     if (!SMF.isEOF())
     {
-      SMF.getNextEvent();
-      /*
-      if (SMF.getNextEvent())
-      {
-        char  sBuf[10];
-        
-        sprintf(sBuf, "%3d", SMF.getTempo());
-        LCDMessage(0, LCD_COLS-strlen(sBuf), sBuf, true);
-        sprintf(sBuf, "%d/%d", SMF.getTimeSignature()>>8, SMF.getTimeSignature() & 0xf);
-        LCDMessage(1, LCD_COLS-strlen(sBuf), sBuf, true);
-      }
-      */
+      SMF.getNextEvent();      
     }    
     else {
       s = MSClose;
@@ -452,7 +447,7 @@ seq_state midiFSM(seq_state curSS)
     // check the keys
     switch (getButton())
     {
-      case 'L': SMF.restart();    break;  // Rewind
+      case 'L': SMF.restart(); sendEvent((byte)100,100); break;  // Rewind
       case 'S': s = MSClose;      break;  // Stop
       case 'P':                   break;  // Nothing assigned to this key
       case 'R':                   break;  // Nothing assigned to this key
@@ -464,6 +459,7 @@ seq_state midiFSM(seq_state curSS)
     // close the file and switch mode to user input
     SMF.close();
     midiSilence();
+    sendEvent((byte)100,100); // reset pins
     curSS = LCDSeq;
     // fall through to default state
 
@@ -492,11 +488,10 @@ void setup(void)
   LCD.backlight();
   LCD.clear();
   LCD.noCursor();
-  //LCDMessage(0, 0, "  Midi  Player  ", false);
-  //LCDMessage(1, 0, "  ------------  ", false);
-
-  // Load characters to the LCD
-  //LCD.createChar(PAUSE, pgm_read_word_near(cPause));
+  strcpy_P(message, (char*)pgm_read_word(&(string_table[0]))); // Necessary casts and dereferencing, just copy.
+  LCDMessage(0, 0, message, false);
+  strcpy_P(message, (char*)pgm_read_word(&(string_table[1]))); // Necessary casts and dereferencing, just copy.
+  LCDMessage(1, 0, message, false);
 
   // setup input pins for buttons
   for(int i=0;i<NBUTTONS;++i) {
@@ -504,14 +499,15 @@ void setup(void)
   } 
 
   // initialise SDFat
-  //LCDErrMessage("Init SDCard", false); //*
   if (!SD.begin(SD_SELECT, SPI_FULL_SPEED)) {
-    LCDErrMessage("SD init fail!", true);
+    strcpy_P(message, (char*)pgm_read_word(&(string_table[6]))); // Necessary casts and dereferencing, just copy.
+    LCDErrMessage(message, true);
   }
   
   plCount = createPlaylistFile();
   if (plCount == 0) {
-    LCDErrMessage("No files", true);
+    strcpy_P(message, (char*)pgm_read_word(&(string_table[7]))); // Necessary casts and dereferencing, just copy.
+    LCDErrMessage(message, true);
   }
   
   // initialise MIDIFile
@@ -521,18 +517,18 @@ void setup(void)
   
   // Set only 16 ticks per quarter note!!!
   // Otherwise the main loop cannot keep up with the midifile
-  SMF.setTicksPerQuarterNote(16); 
+  SMF.setTicksPerQuarterNote(8); 
 
   // For comparing tick time to loop time
   /*
-  Serial.println("\n##################"); 
-  Serial.print("\nTick Time: "); 
+  Serial.println(F("\n##################")); 
+  Serial.print(F("\nTick Time: ")); 
   Serial.println(SMF.getTickTime());
-  Serial.println("\n##################"); 
+  Serial.println(F("\n##################")); 
   */
 
-  delay(750);   // allow the welcome to be read on the LCD
-
+  delay(2000);   // allow the welcome to be read on the LCD
+  LCD.clear();
 }
 
 void loop(void)
@@ -541,6 +537,12 @@ void loop(void)
 // mode from choosing the file, so the FSM will run alternately, depending 
 // on which state we are currently in.
 {
+    // For comparing tick time to loop time
+    /*
+    Serial.print(F("\n#### Loop Time: ")); 
+    Serial.println(micros()-lastlooptime);
+    lastlooptime = micros();
+    */
 
   static seq_state  s = LCDSeq;
 

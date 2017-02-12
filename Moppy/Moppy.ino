@@ -4,7 +4,7 @@ boolean firstRun = true; // Used for one-run-only stuffs;
 
 //First pin being used for floppies, and the last pin.  Used for looping over all pins.
 const byte FIRST_PIN = 2;
-const byte PIN_MAX = 17;
+const byte PIN_MAX = 7;
 #define RESOLUTION 40 //Microsecond resolution for notes
 
 #define VERBOSE 0
@@ -24,28 +24,28 @@ const byte PIN_MAX = 17;
  half a position (use 158 and 98).
  */
 byte MAX_POSITION[] = {
-  0,0,158,0,158,0,158,0,158,0,158,0,158,0,158,0,158,0};
+  0,0,158,0,158,0,158,0};
 
 //Array to track the current position of each floppy head.  (Only even indexes (i.e. 2,4,6...) are used)
 byte currentPosition[] = {
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  0,0,0,0,0,0,0,0};
 
 /*Array to keep track of state of each pin.  Even indexes track the control-pins for toggle purposes.  Odd indexes
  track direction-pins.  LOW = forward, HIGH=reverse
  */
 int currentState[] = {
-  0,0,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW,LOW
+  0,0,LOW,LOW,LOW,LOW,LOW,LOW
 };
 
 //Current period assigned to each pin.  0 = off.  Each period is of the length specified by the RESOLUTION
 //variable above.  i.e. A period of 10 is (RESOLUTION x 10) microseconds long.
 unsigned int currentPeriod[] = {
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+  0,0,0,0,0,0,0,0
 };
 
 //Current tick
 unsigned int currentTick[] = {
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 
+  0,0,0,0,0,0,0,0 
 };
 
 int pin, period;
@@ -65,16 +65,6 @@ void setup(){
   pinMode(5, OUTPUT); // Direction 2
   pinMode(6, OUTPUT); // Step control 3
   pinMode(7, OUTPUT); // Direction 3
-  pinMode(8, OUTPUT); // Step control 4
-  pinMode(9, OUTPUT); // Direction 4
-  pinMode(10, OUTPUT); // Step control 5
-  pinMode(11, OUTPUT); // Direction 5
-  pinMode(12, OUTPUT); // Step control 6
-  pinMode(13, OUTPUT); // Direction 6
-  pinMode(14, OUTPUT); // Step control 7
-  pinMode(15, OUTPUT); // Direction 7
-  pinMode(16, OUTPUT); // Step control 8
-  pinMode(17, OUTPUT); // Direction 8
 
   //With all pins setup, let's do a first run reset
   resetAll();
@@ -87,59 +77,29 @@ void setup(){
 }
 
 void loop(){
-  /*
-  //Only read if we have 3 bytes waiting
-  if (Serial.available() > 1){
-    //Watch for special 100-message to act on
-    if (Serial.peek() == 100) {
-      //Clear the peeked 100 byte so we can get the following data packet
-      Serial.read();
-      byte byte2 = Serial.read();
-      
-      //This isn't used for anything right now, always set to 0
-      //byte byte3 = Serial.read();
-      
-      switch(byte2) {
-        case 0: resetAll(); break;
-        case 1: break;  //Connected
-        case 2: break;  //Disconnected
-        case 3: break;  //Sequence starting
-        case 4: break;  //Sequence stopping
-        default: resetAll(); break;
-      }      
-      //Flush any remaining messages.
-      while(Serial.available() > 0) { Serial.read(); }
-    } 
-    else{
-      pin = Serial.read();
-      //period = (Serial.read() << 8) | Serial.read();
-      period = Serial.read();
-      currentPeriod[pin] = period;
-      if(VERBOSE) {
-        Serial.print("Setting pin ");
-        Serial.print(pin);
-        Serial.print(" with period ");
-        Serial.println(period);
-      }
-    }
-  }
-  */
-
-
+  
 recvBytesWithStartEndMarkers();
 
-if (newData == true && numReceived == 2) {
+if (newData == true) {
        pin = receivedBytes[0];
        period = receivedBytes[1];
+       if(pin == 100 && period == 100) {
+        if(VERBOSE) {
+          Serial.println("Resetting pins ...");
+        }
+        resetAll();
+       }
+       else {
        currentPeriod[pin] = period;
-        newData = false;
         if(VERBOSE) {
           Serial.print("Setting pin ");
           Serial.print(pin);
           Serial.print(" with period ");
           Serial.println(period);
         }
-    }
+     }
+     newData = false;
+  }
 }
       
 
@@ -172,41 +132,6 @@ void tick()
     if (currentTick[6] >= currentPeriod[6]){
       togglePin(6,7);
       currentTick[6]=0;
-    }
-  }
-  if (currentPeriod[8]>0){
-    currentTick[8]++;
-    if (currentTick[8] >= currentPeriod[8]){
-      togglePin(8,9);
-      currentTick[8]=0;
-    }
-  }
-  if (currentPeriod[10]>0){
-    currentTick[10]++;
-    if (currentTick[10] >= currentPeriod[10]){
-      togglePin(10,11);
-      currentTick[10]=0;
-    }
-  }
-  if (currentPeriod[12]>0){
-    currentTick[12]++;
-    if (currentTick[12] >= currentPeriod[12]){
-      togglePin(12,13);
-      currentTick[12]=0;
-    }
-  }
-  if (currentPeriod[14]>0){
-    currentTick[14]++;
-    if (currentTick[14] >= currentPeriod[14]){
-      togglePin(14,15);
-      currentTick[14]=0;
-    }
-  }
-  if (currentPeriod[16]>0){
-    currentTick[16]++;
-    if (currentTick[16] >= currentPeriod[16]){
-      togglePin(16,17);
-      currentTick[16]=0;
     }
   }
 
