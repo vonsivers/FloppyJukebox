@@ -56,6 +56,8 @@ byte numReceived = 0;
 
 boolean newData = false;
 
+unsigned long lastlooptime = 0;
+
 //Setup pins (Even-odd pairs for step control and direction
 void setup(){
   pinMode(13, OUTPUT);// Pin 13 has an LED connected on most Arduino boards
@@ -77,6 +79,12 @@ void setup(){
 }
 
 void loop(){
+
+  /*
+    Serial.print(F("\n#### Loop Time: ")); 
+    Serial.println(micros()-lastlooptime);
+    lastlooptime = micros();
+   */
   
 recvBytesWithStartEndMarkers();
 

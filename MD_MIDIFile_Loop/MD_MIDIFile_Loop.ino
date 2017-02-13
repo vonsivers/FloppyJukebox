@@ -32,9 +32,6 @@
 
 #endif // USE_MIDI
 
-// compare tick time to lop time
-//unsigned long lastlooptime = 0;
-
 // SD chip select pin for SPI comms.
 // Arduino Ethernet shield, pin 4.
 // Default SD chip select is the SPI SS pin (10).
@@ -421,6 +418,9 @@ seq_state midiFSM(seq_state curSS)
       // Attempt to load the file
       if ((err = SMF.load()) == -1)
       {
+        // Set tempo by defining number of ticks per quater note
+        SMF.setTicksPerQuarterNote(24);
+
         s = MSProcess;
       }
       else
@@ -513,19 +513,7 @@ void setup(void)
   // initialise MIDIFile
   
   SMF.begin(&SD);
-  SMF.setMidiHandler(midiCallback);
-  
-  // Set only 16 ticks per quarter note!!!
-  // Otherwise the main loop cannot keep up with the midifile
-  SMF.setTicksPerQuarterNote(8); 
-
-  // For comparing tick time to loop time
-  /*
-  Serial.println(F("\n##################")); 
-  Serial.print(F("\nTick Time: ")); 
-  Serial.println(SMF.getTickTime());
-  Serial.println(F("\n##################")); 
-  */
+  SMF.setMidiHandler(midiCallback);  
 
   delay(2000);   // allow the welcome to be read on the LCD
   LCD.clear();
@@ -537,12 +525,6 @@ void loop(void)
 // mode from choosing the file, so the FSM will run alternately, depending 
 // on which state we are currently in.
 {
-    // For comparing tick time to loop time
-    /*
-    Serial.print(F("\n#### Loop Time: ")); 
-    Serial.println(micros()-lastlooptime);
-    lastlooptime = micros();
-    */
 
   static seq_state  s = LCDSeq;
 
