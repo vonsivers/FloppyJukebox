@@ -56,7 +56,19 @@ byte numReceived = 0;
 
 boolean newData = false;
 
-unsigned long lastlooptime = 0;
+// normalize RGB channels to equal brightness
+long bright[3] = { 107, 67, 256};
+
+// LED pins for all drives
+#define R1 A0
+#define G1 A1
+#define B1 A2
+#define R2 A3
+#define G2 A4
+#define B2 A5
+#define R3 8
+#define G3 9
+#define B3 10
 
 //Setup pins (Even-odd pairs for step control and direction
 void setup(){
@@ -68,8 +80,20 @@ void setup(){
   pinMode(6, OUTPUT); // Step control 3
   pinMode(7, OUTPUT); // Direction 3
 
+  // RGB LED pins
+  pinMode(R1, OUTPUT); // LED1 R
+  pinMode(G1, OUTPUT); // LED1 G
+  pinMode(B1, OUTPUT); // LED1 B
+  pinMode(R2, OUTPUT); // LED2 R
+  pinMode(G2, OUTPUT); // LED2 G
+  pinMode(B2, OUTPUT); // LED2 B
+  pinMode(R3, OUTPUT); // LED3 R
+  pinMode(G3, OUTPUT); // LED3 G
+  pinMode(B3, OUTPUT); // LED3 B
+
   //With all pins setup, let's do a first run reset
   resetAll();
+  resetRGBLED();
   delay(1000);
 	
   Timer1.initialize(RESOLUTION); // Set up a timer at the defined resolution
@@ -96,9 +120,11 @@ if (newData == true) {
           Serial.println("Resetting pins ...");
         }
         resetAll();
+        resetRGBLED();
        }
        else {
        currentPeriod[pin] = period;
+       setRGBLED(pin,period);
         if(VERBOSE) {
           Serial.print("Setting pin ");
           Serial.print(pin);
@@ -260,3 +286,59 @@ void recvBytesWithStartEndMarkers() {
         }
     }
 }
+
+void resetRGBLED() {
+  digitalWrite(R1, LOW);
+  digitalWrite(G1, LOW);
+  digitalWrite(B1, LOW);
+  digitalWrite(R2, LOW);
+  digitalWrite(G2, LOW);
+  digitalWrite(B2, LOW);
+  digitalWrite(R3, LOW);
+  digitalWrite(G3, LOW);
+  digitalWrite(B3, LOW);
+}
+
+void setRGBLED(int pin, int period) {
+  int k = 0;
+  int value = LOW;
+  if((period<=30578/80&&period>=25713/80) || (period<=15289/80&&period>=12856/80) || (period<= 7645/80&&period>=6428/80)|| (period<= 3823/80&&period>=3214/80)) {
+    k = 0;
+    value = HIGH;
+  }
+  else if ((period<=24270/80&&period>=20409/80) || (period<=12135/80&&period>=10205/80) || (period<= 6068/80&&period>=5103/80)|| (period<= 3034/80&&period>=2552/80)) {
+    k = 1;
+    value = HIGH;
+  }
+  else if ((period<=19263/80&&period>=16198/80) || (period<=9632/80&&period>=8099/80) || (period<= 4816/80&&period>=4050/80)|| (period<= 2408/80&&period>=2025/80)) {
+    k = 2;
+    value = HIGH;
+  }
+  else if (period == 0) {
+    switch(pin) {
+      case 2:
+        digitalWrite(R1, LOW);
+        digitalWrite(G1, LOW);
+        digitalWrite(B1, LOW);
+      case 4:
+        digitalWrite(R2, LOW);
+        digitalWrite(G2, LOW);
+        digitalWrite(B2, LOW);
+     case 6:
+        digitalWrite(R3, LOW);
+        digitalWrite(G3, LOW);
+        digitalWrite(B3, LOW);
+    }
+  }
+
+  switch(pin) {
+    case 2:
+      digitalWrite(R1+k, value);
+    case 4:
+      digitalWrite(R2+k, value);
+    case 6:
+      digitalWrite(R3+k, value);
+  }
+ 
+}
+
