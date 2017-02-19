@@ -150,8 +150,9 @@ void midiCallback(midi_event *pev)
                 //Arduino by multipying by 2.
                 pin = (byte) (2 * (pev->channel + 1));
 
-                double pitchBend = 2*(pev->data[2] << 7) + 2*(pev->data[1]);
-
+                //double pitchBend = (pev->data[2] << 7) + (pev->data[1]);
+                double pitchBend = (pev->data[2])*128. + (pev->data[1]);
+                
                 // Calculate the new period based on the desired maximum bend and the current pitchBend value
                 int period = (int) (currentPeriod[pev->channel] / pow(2.0, (BEND_CENTS/1200.0)*((pitchBend - 8192.0) / 8192.0)));
                 //System.out.println("Bent by " + Math.pow(2.0, (bendCents/1200.0)*((pitchBend - 8192.0) / 8192.0)));

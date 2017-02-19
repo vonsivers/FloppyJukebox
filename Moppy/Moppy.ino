@@ -82,7 +82,7 @@ void setup(){
 
   // RGB LED pins
   pinMode(R1, OUTPUT); // LED1 R
-  pinMode(G1, OUTPUT); // LED1 G
+  pinMode(G1, OUTPUT); // LED1 G (LED broken)
   pinMode(B1, OUTPUT); // LED1 B
   pinMode(R2, OUTPUT); // LED2 R
   pinMode(G2, OUTPUT); // LED2 G
@@ -289,7 +289,7 @@ void recvBytesWithStartEndMarkers() {
 
 void resetRGBLED() {
   digitalWrite(R1, LOW);
-  digitalWrite(G1, LOW);
+  //digitalWrite(G1, LOW); // LED broken
   digitalWrite(B1, LOW);
   digitalWrite(R2, LOW);
   digitalWrite(G2, LOW);
@@ -318,7 +318,7 @@ void setRGBLED(int pin, int period) {
     switch(pin) {
       case 2:
         digitalWrite(R1, LOW);
-        digitalWrite(G1, LOW);
+        //digitalWrite(G1, LOW); // LED broken
         digitalWrite(B1, LOW);
         break;
       case 4:
@@ -336,14 +336,19 @@ void setRGBLED(int pin, int period) {
 
   switch(pin) {
     case 2:
-      digitalWrite(R1+k, value);
+      if(k==1) { // check for broken LED
+        digitalWrite(B1, value);
+      }
+      else {
+        digitalWrite(R1+k, value);
+      }
       break;
     case 4:
       digitalWrite(R2+k, value);
       break;
     case 6:
       if(k==2) { // check for broken LED
-        digitalWrite(R3+1, value);
+        digitalWrite(G3, value);
       }
       else {
         digitalWrite(R3+k, value);
