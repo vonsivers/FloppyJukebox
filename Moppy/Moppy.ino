@@ -89,7 +89,7 @@ void setup(){
   pinMode(B2, OUTPUT); // LED2 B
   pinMode(R3, OUTPUT); // LED3 R
   pinMode(G3, OUTPUT); // LED3 G
-  pinMode(B3, OUTPUT); // LED3 B
+  pinMode(B3, OUTPUT); // LED3 B (LED broken)
 
   //With all pins setup, let's do a first run reset
   resetAll();
@@ -296,7 +296,7 @@ void resetRGBLED() {
   digitalWrite(B2, LOW);
   digitalWrite(R3, LOW);
   digitalWrite(G3, LOW);
-  digitalWrite(B3, LOW);
+  //digitalWrite(B3, LOW); // LED broken
 }
 
 void setRGBLED(int pin, int period) {
@@ -320,24 +320,36 @@ void setRGBLED(int pin, int period) {
         digitalWrite(R1, LOW);
         digitalWrite(G1, LOW);
         digitalWrite(B1, LOW);
+        break;
       case 4:
         digitalWrite(R2, LOW);
         digitalWrite(G2, LOW);
         digitalWrite(B2, LOW);
+        break;
      case 6:
         digitalWrite(R3, LOW);
         digitalWrite(G3, LOW);
-        digitalWrite(B3, LOW);
+        //digitalWrite(B3, LOW); // LED broken
+        break;
     }
   }
 
   switch(pin) {
     case 2:
       digitalWrite(R1+k, value);
+      break;
     case 4:
       digitalWrite(R2+k, value);
+      break;
     case 6:
-      digitalWrite(R3+k, value);
+      if(k==2) { // check for broken LED
+        digitalWrite(R3+1, value);
+      }
+      else {
+        digitalWrite(R3+k, value);
+      }
+      break;
+      
   }
  
 }
