@@ -419,10 +419,19 @@ seq_state midiFSM(seq_state curSS)
       // Attempt to load the file
       if ((err = SMF.load()) == -1)
       {
-        // Set tempo by defining number of ticks per quater note
+        // Set tempo by defining number of ticks per quater note and BPM
+        int ticks = SMF.getTicksPerQuarterNote();
+        int tempo = SMF.getTempo();
+        int timesig_nom = SMF.getTimeSignature() >> 8; 
+        int timesig_denom = SMF.getTimeSignature() & 0xf;
+        SMF.setTimeSignature(4,4);
+        //SMF.setTempo(tempo*ticks/24*timesig_nom/timesig_denom);
+        SMF.setTempo(tempo*ticks/24);
         SMF.setTicksPerQuarterNote(24);
 
         s = MSProcess;
+
+        delay(1000);
       }
       else
       {
